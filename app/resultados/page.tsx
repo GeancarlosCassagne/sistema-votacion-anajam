@@ -9,6 +9,7 @@ export default function PantallaVeedor() {
   const [votos, setVotos] = useState<{ [key: string]: number }>({});
   const [cargando, setCargando] = useState(true);
   const [eleccionActiva, setEleccionActiva] = useState(true);
+  const [descargando, setDescargando] = useState(false);
 
   useEffect(() => {
     const cargarDatos = async () => {
@@ -45,7 +46,6 @@ export default function PantallaVeedor() {
         setVotos((prev) => ({ ...prev, [opcion]: cant }));
       })
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'estado_eleccion' }, (payload) => {
-        // Esto cambia la interfaz del veedor al instante
         setEleccionActiva(payload.new.activa);
       })
       .subscribe();
@@ -61,14 +61,68 @@ export default function PantallaVeedor() {
       : '¿Está absolutamente seguro de CERRAR las votaciones? Se bloqueará la interfaz de los votantes y se revelará el escrutinio final.';
 
     if (window.confirm(mensaje)) {
-      // Modificamos el estado local inmediatamente para velocidad visual
       setEleccionActiva(nuevoEstado);
       
-      // Enviamos a la base de datos para actualizar a los votantes
       await supabase
         .from('estado_eleccion')
         .update({ activa: nuevoEstado })
         .eq('id', 'configuracion_general');
+    }
+  };
+
+  // FUNCIÓN PARA GENERAR Y DESCARGAR EL EXCEL/CSV CRONOLÓGICO
+  const descargarReporteVotos = async () => {
+    if (descargando) return;
+    setDescargando(true);
+
+    try {
+      // Consultamos el historial ordenado ascendentemente por id/fecha_hora
+      const { data: historial, error } = await supabase
+        .from('historial_votos')
+        .select('id, opcion, fecha_hora')
+        .order('id', { ascending: true });
+
+      if (error) throw error;
+
+      if (!historial || historial.length === 0) {
+        alert("Aún no existen registros de votos individuales en la bitácora de auditoría.");
+        setDescargando(false);
+        return;
+      }
+
+      // Estructuramos los encabezados del archivo
+      let contenidoCsv = "Nro Voto;Opcion Seleccionada;Fecha y Hora del Sufragio\n";
+
+      // Procesamos fila por fila e insertamos los datos limpios
+      historial.forEach((voto, index) => {
+        // Formateamos la estampa de tiempo para que Excel la reconozca de inmediato
+        const fechaFormateada = new Date(voto.fecha_hora).toLocaleString('es-EC', {
+          timeZone: 'America/Guayaquil'
+        });
+        
+        contenidoCsv += `${index + 1};${voto.opcion};${fechaFormateada}\n`;
+      });
+
+      // Insertamos el BOM UTF-8 para obligar a Excel a procesar las tildes y caracteres latinos
+      const blob = new Blob([new Uint8Array([0xEF, 0xBB, 0xBF]), contenidoCsv], {
+        type: 'text/csv;charset=utf-8;'
+      });
+
+      // Disparamos la descarga automática en el navegador
+      const link = document.createElement("a");
+      const url = URL.createObjectURL(blob);
+      link.setAttribute("href", url);
+      link.setAttribute("download", `Auditoria_Votos_ANAJAM_2026.csv`);
+      link.style.visibility = 'hidden';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+
+    } catch (err) {
+      console.error("Error al exportar los datos:", err);
+      alert("No se pudo extraer la bitácora de auditoría de Supabase.");
+    } finally {
+      setDescargando(false);
     }
   };
 
@@ -100,7 +154,7 @@ export default function PantallaVeedor() {
 
         {/* CONTENIDO INTERMITENTE REACTIVO */}
         {eleccionActiva ? (
-          <div className="text-center py-12 px-4 bg-slate-950/50 rounded-2xl border border-slate-800 flex flex-col items-center animate-fade-in">
+          <div className="text-center py-12 px-4 bg-slate-550/50 rounded-2xl border border-slate-800 flex flex-col items-center animate-fade-in">
             <div className="w-16 h-16 bg-blue-500/10 border border-blue-500/20 text-blue-400 rounded-full flex items-center justify-center text-2xl mb-4 animate-spin">
               ⏳
             </div>
@@ -139,16 +193,29 @@ export default function PantallaVeedor() {
               );
             })}
 
-            {/* Resumen Total */}
+            {/* Resumen Total y Acciones del Cierre */}
             <div className="mt-10 text-center border-t border-slate-800 pt-6 flex flex-col items-center gap-6">
-              <div className="inline-block bg-slate-950 px-8 py-3 rounded-2xl border border-slate-800">
+              <div className="inline-block bg-slate-950 px-8 py-3 rounded-2xl border border-slate-800 w-full max-w-sm">
                 <p className="text-sm text-slate-400 uppercase tracking-wider font-semibold">Total General Emitido</p>
                 <p className="text-4xl font-black text-white mt-1">{totalVotos} sufragios</p>
               </div>
 
+              {/* NUEVO: Botón de Auditoría Cronológica para Excel */}
+              <button
+                onClick={descargarReporteVotos}
+                disabled={descargando}
+                className="w-full max-w-sm bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-700 hover:to-emerald-800 text-white font-black text-sm px-6 py-3.5 rounded-xl shadow-lg transition-all active:scale-[0.99] uppercase tracking-wider flex items-center justify-center gap-2 border border-emerald-500/30 disabled:opacity-50"
+              >
+                {descargando ? (
+                  <>📊 Procesando reporte...</>
+                ) : (
+                  <>📥 Descargar Auditoría Excel (CSV)</>
+                )}
+              </button>
+
               <button
                 onClick={() => cambiarEstadoEleccion(true)}
-                className="text-xs font-bold text-slate-500 hover:text-emerald-400 transition-colors uppercase tracking-widest border border-slate-800 hover:border-emerald-500/20 bg-slate-950/40 px-4 py-2 rounded-lg"
+                className="text-xs font-bold text-slate-500 hover:text-emerald-400 transition-colors uppercase tracking-widest border border-slate-800 hover:border-emerald-500/20 bg-slate-950/40 px-4 py-2 rounded-lg mt-4"
               >
                 🔄 Reabrir proceso de votación
               </button>

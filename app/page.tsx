@@ -18,11 +18,9 @@ export default function VotacionEscolar() {
 
   useEffect(() => {
     const inicializarSistema = async () => {
-      // Cargamos las opciones disponibles de la tabla votos
       const { data: datosVotos } = await supabase.from('votos').select('opcion');
       if (datosVotos) setOpciones(datosVotos.map((fila) => fila.opcion));
 
-      // Cargamos el estado general
       const { data: datosEstado } = await supabase
         .from('estado_eleccion')
         .select('activa')
@@ -35,7 +33,6 @@ export default function VotacionEscolar() {
 
     inicializarSistema();
 
-    // Sincronización en tiempo real con el panel del veedor
     const canalEstado = supabase
       .channel('cambios-estado-votante-estricto')
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'estado_eleccion' }, (payload) => {
@@ -63,11 +60,9 @@ export default function VotacionEscolar() {
 
   const confirmarVoto = async () => {
     if (procesandoVoto) return;
-    
     setProcesandoVoto(true);
 
     try {
-      // TRAEMOS EL CONTEO ACTUAL DE LA OPCIÓN SELECCIONADA
       const { data: filaActual, error: errorFetch } = await supabase
         .from('votos')
         .select('cantidad')
@@ -75,21 +70,18 @@ export default function VotacionEscolar() {
         .maybeSingle();
 
       if (errorFetch) throw errorFetch;
-
-      // Calculamos la nueva cantidad sumando 1 al valor actual
       const nuevaCantidad = (filaActual?.cantidad || 0) + 1;
 
-      // HACEMOS UN UPSERT (Inserta o actualiza de forma segura según el campo 'opcion')
-      const { error: errorUpsert } = await supabase
+      // 1. Guarda en la tabla acumulativa para las gráficas del veedor
+      await supabase
         .from('votos')
-        .upsert({ 
-          opcion: opcionSeleccionada, 
-          cantidad: nuevaCantidad 
-        }, { onConflict: 'opcion' });
+        .upsert({ opcion: opcionSeleccionada, cantidad: nuevaCantidad }, { onConflict: 'opcion' });
 
-      if (errorUpsert) throw errorUpsert;
+      // 2. GUARDA EN EL HISTORIAL (Registra voto individual con fecha y hora automática)
+      await supabase
+        .from('historial_votos')
+        .insert({ opcion: opcionSeleccionada });
 
-      // Si todo sale bien, bloqueamos la pantalla del alumno y cerramos el modal
       setHaVotado(true);
       setMostrarModal(false);
 
@@ -147,7 +139,6 @@ export default function VotacionEscolar() {
             🔒 El período para ejercer el voto ha finalizado. Agradecemos su participación.
           </div>
         ) : haVotado ? (
-          /* PANTALLA DE ÉXITO FIJA */
           <div className="space-y-6 animate-scale-up">
             <div className="text-center text-md font-bold text-white bg-emerald-600 py-4 px-6 rounded-xl border border-emerald-700 shadow-md">
               <span className="text-2xl block mb-1">🎉</span>
@@ -170,7 +161,6 @@ export default function VotacionEscolar() {
             </div>
           </div>
         ) : (
-          /* BOTONES DE LISTAS */
           <div className="space-y-4">
             {opciones.map((opcion) => (
               <div key={opcion} className="bg-slate-50 p-4 rounded-xl border-2 border-slate-100 hover:border-blue-300 transition-all">
