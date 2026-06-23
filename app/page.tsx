@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { supabase } from './lib/supabase';
-import Image from 'next/image';
+
 
 export default function VotacionEscolar() {
   const [opciones, setOpciones] = useState<string[]>([]);
