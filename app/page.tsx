@@ -28,20 +28,27 @@ export default function VotacionEscolar() {
 
     inicializarSistema();
 
+    // CANAL CORREGIDO: Usamos el mismo identificador global para forzar la reactividad inmediata
     const canalEstado = supabase
-      .channel('cambios-estado-votante-realtime')
+      .channel('cambios-globales-veedor')
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'estado_eleccion' }, (payload) => {
         const nuevoEstado = payload.new.activa;
+        
+        // Forzamos a React a enterarse del cambio de estado al milisegundo
         setEleccionActiva(nuevoEstado);
         
-        // Si el veedor reabre las mesas, le permitimos volver a votar a la tablet/pantalla
         if (nuevoEstado === true) {
           setHaVotado(false);
         }
       })
-      .subscribe();
+      .subscribe((status) => {
+        // Log temporal en consola para verificar que la tablet/celular esté conectada en vivo
+        console.log("Estado de conexión en votante:", status);
+      });
 
-    return () => { supabase.removeChannel(canalEstado); };
+    return () => { 
+      supabase.removeChannel(canalEstado); 
+    };
   }, []);
 
   const manejarVoto = async (opcionSeleccionada: string) => {
