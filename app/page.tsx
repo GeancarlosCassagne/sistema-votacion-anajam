@@ -14,6 +14,7 @@ export default function VotacionEscolar() {
   // Estados del Modal
   const [mostrarModal, setMostrarModal] = useState(false);
   const [opcionSeleccionada, setOpcionSeleccionada] = useState('');
+  const [procesandoVoto, setProcesandoVoto] = useState(false);
 
   useEffect(() => {
     const inicializarSistema = async () => {
@@ -41,6 +42,7 @@ export default function VotacionEscolar() {
         if (nuevoEstadoGlobal === true) {
           setHaVotado(false);
           setMostrarModal(false);
+          setProcesandoVoto(false);
         }
       })
       .subscribe();
@@ -51,36 +53,54 @@ export default function VotacionEscolar() {
   }, []);
   
   const previsualizarVoto = (opcion: string) => {
-    if (haVotado || !eleccionActiva) return;
+    if (haVotado || !eleccionActiva || procesandoVoto) return;
     setOpcionSeleccionada(opcion);
     setMostrarModal(true);
   };
 
   const confirmarVoto = async () => {
-    // 1. Cambiamos los estados visuales inmediatamente para que sea instantáneo
-    setMostrarModal(false);
-    setHaVotado(true);
+    if (procesandoVoto) return;
+    
+    // 1. Bloqueamos el modal internamente para mitigar spam de clics
+    setProcesandoVoto(true);
 
-    // 2. Traemos el conteo actual de forma asíncrona
-    const { data } = await supabase
-      .from('votos')
-      .select('*')
-      .eq('opcion', opcionSeleccionada)
-      .single();
+    try {
+      // 2. Traemos el conteo actual asegurando la respuesta de la red
+      const { data, error: errorFetch } = await supabase
+        .from('votos')
+        .select('*')
+        .eq('opcion', opcionSeleccionada)
+        .single();
 
-    const cantidadActual = data?.cantidad !== undefined ? data.cantidad : (data?.quantity || 0);
+      if (errorFetch) throw errorFetch;
 
-    // 3. Enviamos la actualización a Supabase
-    await supabase
-      .from('votos')
-      .update({ cantidad: cantidadActual + 1, quantity: cantidadActual + 1 })
-      .eq('opcion', opcionSeleccionada);
+      const cantidadActual = data?.cantidad !== undefined ? data.cantidad : (data?.quantity || 0);
+
+      // 3. Enviamos la actualización y esperamos que Supabase confirme el recibido
+      const { error: errorUpdate } = await supabase
+        .from('votos')
+        .update({ cantidad: cantidadActual + 1, quantity: cantidadActual + 1 })
+        .eq('opcion', opcionSeleccionada);
+
+      if (errorUpdate) throw errorUpdate;
+
+      // 4. SOLO cuando la base de datos guardó todo con éxito, cambiamos la pantalla
+      setHaVotado(true);
+      setMostrarModal(false);
+    } catch (error) {
+      console.error("Error al registrar el voto:", error);
+      // Si algo falla, liberamos el botón para que el alumno pueda volver a intentar
+      alert("Hubo un inconveniente de conexión. Por favor, intenta confirmar tu voto nuevamente.");
+    } finally {
+      setProcesandoVoto(false);
+    }
   };
 
   const habilitarSiguienteVotante = () => {
     setOpcionSeleccionada('');
     setHaVotado(false);
     setMostrarModal(false);
+    setProcesandoVoto(false);
   };
 
   if (cargando) {
@@ -150,6 +170,7 @@ export default function VotacionEscolar() {
             {opciones.map((opcion) => (
               <div key={opcion} className="bg-slate-50 p-4 rounded-xl border-2 border-slate-100 hover:border-blue-300 transition-all">
                 <button
+                  disabled={procesandoVoto}
                   onClick={() => previsualizarVoto(opcion)}
                   className="w-full py-4 px-6 rounded-xl font-bold text-lg shadow transition-all bg-gradient-to-r from-blue-800 to-blue-700 hover:from-blue-900 hover:to-blue-800 text-white hover:shadow-lg active:scale-[0.99]"
                 >
@@ -190,16 +211,18 @@ export default function VotacionEscolar() {
 
             <div className="mt-6 flex flex-col sm:flex-row gap-3">
               <button
+                disabled={procesandoVoto}
                 onClick={() => setMostrarModal(false)}
-                className="w-full order-2 sm:order-1 py-3 px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl transition-colors text-sm uppercase tracking-wider"
+                className="w-full order-2 sm:order-1 py-3 px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl transition-colors text-sm uppercase tracking-wider disabled:opacity-50"
               >
                 Regresar
               </button>
               <button
+                disabled={procesandoVoto}
                 onClick={confirmarVoto}
-                className="w-full order-1 sm:order-2 py-3 px-4 bg-gradient-to-r from-red-600 to-red-700 hover:from-red-700 hover:to-red-800 text-white font-black rounded-xl shadow-md hover:shadow-lg transition-all text-sm uppercase tracking-wider active:scale-[0.98]"
+                className="w-full order-1 sm:order-2 py-3 px-4 bg-gradient-to-r from-red-600 to-red-700 hover:from-red-700 hover:to-red-800 text-white font-black rounded-xl shadow-md hover:shadow-lg transition-all text-sm uppercase tracking-wider active:scale-[0.98] disabled:from-gray-400 disabled:to-gray-500"
               >
-                Confirmar Voto
+                {procesandoVoto ? 'Guardando Voto...' : 'Confirmar Voto'}
               </button>
             </div>
 
