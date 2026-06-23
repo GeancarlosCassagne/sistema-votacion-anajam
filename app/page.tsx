@@ -13,11 +13,9 @@ export default function VotacionEscolar() {
 
   useEffect(() => {
     const inicializarSistema = async () => {
-      // 1. Traer opciones de votación
       const { data: datosVotos } = await supabase.from('votos').select('opcion');
       if (datosVotos) setOpciones(datosVotos.map((fila) => fila.opcion));
 
-      // 2. Traer estado de la elección
       const { data: datosEstado } = await supabase
         .from('estado_eleccion')
         .select('activa')
@@ -30,11 +28,16 @@ export default function VotacionEscolar() {
 
     inicializarSistema();
 
-    // Escuchar cambios en tiempo real si el veedor abre o cierra las mesas
     const canalEstado = supabase
-      .channel('cambios-estado-votante')
+      .channel('cambios-estado-votante-realtime')
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'estado_eleccion' }, (payload) => {
-        setEleccionActiva(payload.new.activa);
+        const nuevoEstado = payload.new.activa;
+        setEleccionActiva(nuevoEstado);
+        
+        // Si el veedor reabre las mesas, le permitimos volver a votar a la tablet/pantalla
+        if (nuevoEstado === true) {
+          setHaVotado(false);
+        }
       })
       .subscribe();
 
@@ -44,20 +47,25 @@ export default function VotacionEscolar() {
   const manejarVoto = async (opcionSeleccionada: string) => {
     if (haVotado || !eleccionActiva) return;
 
+    // Ponemos en true inmediatamente para mitigar doble click accidental
+    setHaVotado(true);
+
     const { data } = await supabase
       .from('votos')
-      .select('cantidad')
+      .select('*')
       .eq('opcion', opcionSeleccionada)
       .single();
 
-    const cantidadActual = data?.cantidad || 0;
+    const cantidadActual = data?.cantidad !== undefined ? data.cantidad : (data?.quantity || 0);
 
     const { error } = await supabase
       .from('votos')
-      .update({ cantidad: cantidadActual + 1 })
+      .update({ cantidad: cantidadActual + 1, quantity: cantidadActual + 1 }) // Sincroniza ambos nombres de columnas posibles
       .eq('opcion', opcionSeleccionada);
 
-    if (!error) setHaVotado(true);
+    if (error) {
+      setHaVotado(false); // Si falló la red, permite reintentar
+    }
   };
 
   if (cargando) {
@@ -77,7 +85,7 @@ export default function VotacionEscolar() {
           <div className="relative w-24 h-24 mb-4">
             <img src="/logoanajam.png" alt="Logo ANAJAM" className="w-full h-full object-contain" />
           </div>
-          <span className={`text-xs font-bold px-3 py-1 rounded-full uppercase tracking-wider ${
+          <span className={`text-xs font-bold px-3 py-1 rounded-full uppercase tracking-wider transition-colors duration-500 ${
             eleccionActiva ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-700'
           }`}>
             {eleccionActiva ? 'Urnas Abiertas' : 'Urnas Cerradas'}
@@ -85,14 +93,14 @@ export default function VotacionEscolar() {
           <h1 className="text-2xl font-black text-blue-900 mt-3 uppercase tracking-tight">
             Elección de consejo estudiantil ANAJAM 2026
           </h1>
-          <p className="text-sm text-gray-500 mt-2 font-medium">
+          <p className="text-sm text-gray-500 mt-2 font-medium transition-all">
             {eleccionActiva 
               ? 'Por favor, selecciona la opción de tu preferencia. Tu voto es secreto.' 
               : 'El proceso de votación ha concluido oficialmente por disposición de la junta electoral.'}
           </p>
         </div>
 
-        {/* Tarjetas de Opciones o Mensaje de Cierre */}
+        {/* Contenido Dinámico */}
         {eleccionActiva ? (
           <div className="space-y-4">
             {opciones.map((opcion) => (
@@ -112,13 +120,13 @@ export default function VotacionEscolar() {
             ))}
           </div>
         ) : (
-          <div className="text-center py-8 px-4 bg-slate-50 rounded-xl border-2 border-dashed border-slate-200 text-slate-500 font-medium">
+          <div className="text-center py-8 px-4 bg-slate-50 rounded-xl border-2 border-dashed border-slate-200 text-slate-500 font-medium animate-fade-in">
             🔒 El período para ejercer el voto ha finalizado. Agradecemos su participación.
           </div>
         )}
 
         {haVotado && eleccionActiva && (
-          <div className="text-center text-md font-bold text-white mt-6 bg-emerald-600 py-3 rounded-xl border border-emerald-700 shadow-md animate-bounce">
+          <div className="text-center text-md font-bold text-white mt-6 bg-emerald-600 py-3 rounded-xl border border-emerald-700 shadow-md animate-pulse">
             ¡Tu voto ha sido registrado con éxito! 🎉
           </div>
         )}

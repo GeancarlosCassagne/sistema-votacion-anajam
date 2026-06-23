@@ -16,7 +16,10 @@ export default function PantallaVeedor() {
       const { data: datosVotos } = await supabase.from('votos').select('*');
       if (datosVotos) {
         const mapaVotos: { [key: string]: number } = {};
-        datosVotos.forEach((fila) => { mapaVotos[fila.opcion] = fila.cantidad; });
+        datosVotos.forEach((fila) => { 
+          const cant = fila.cantidad !== undefined ? fila.cantidad : (fila.quantity || 0);
+          mapaVotos[fila.opcion] = cant; 
+        });
         setVotos(mapaVotos);
       }
 
@@ -33,25 +36,22 @@ export default function PantallaVeedor() {
 
     cargarDatos();
 
-    // Canales en tiempo real
-    const canalVotos = supabase
-      .channel('cambios-votos-veedor')
+    // CANAL ÚNICO EN TIEMPO REAL PARA TODO EL PROYECTO
+    const canalSincronizacion = supabase
+      .channel('cambios-globales-veedor')
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'votos' }, (payload) => {
-        const { opcion, cantidad } = payload.new;
-        setVotos((prev) => ({ ...prev, [opcion]: cantidad }));
+        const { opcion } = payload.new;
+        const cant = payload.new.cantidad !== undefined ? payload.new.cantidad : (payload.new.quantity || 0);
+        setVotos((prev) => ({ ...prev, [opcion]: cant }));
       })
-      .subscribe();
-
-    const canalEstado = supabase
-      .channel('cambios-estado-veedor')
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'estado_eleccion' }, (payload) => {
+        // Esto cambia la interfaz del veedor al instante
         setEleccionActiva(payload.new.activa);
       })
       .subscribe();
 
     return () => {
-      supabase.removeChannel(canalVotos);
-      supabase.removeChannel(canalEstado);
+      supabase.removeChannel(canalSincronizacion);
     };
   }, []);
 
@@ -61,6 +61,10 @@ export default function PantallaVeedor() {
       : '¿Está absolutamente seguro de CERRAR las votaciones? Se bloqueará la interfaz de los votantes y se revelará el escrutinio final.';
 
     if (window.confirm(mensaje)) {
+      // Modificamos el estado local inmediatamente para velocidad visual
+      setEleccionActiva(nuevoEstado);
+      
+      // Enviamos a la base de datos para actualizar a los votantes
       await supabase
         .from('estado_eleccion')
         .update({ activa: nuevoEstado })
@@ -81,7 +85,7 @@ export default function PantallaVeedor() {
           <div className="w-20 h-20 mb-3 bg-white/10 p-2 rounded-2xl border border-white/20">
             <img src="/logoanajam.png" alt="Logo ANAJAM" className="w-full h-full object-contain" />
           </div>
-          <span className={`text-white text-xs font-black px-4 py-1 rounded-full uppercase tracking-widest shadow-md ${
+          <span className={`text-white text-xs font-black px-4 py-1 rounded-full uppercase tracking-widest shadow-md transition-all duration-500 ${
             eleccionActiva ? 'bg-emerald-600 animate-pulse' : 'bg-red-600'
           }`}>
             {eleccionActiva ? 'Elecciones en Proceso • En Vivo 📡' : 'Votaciones Cerradas • Resultados Oficiales 🔒'}
@@ -89,15 +93,14 @@ export default function PantallaVeedor() {
           <h1 className="text-3xl md:text-4xl font-black text-white mt-4 uppercase tracking-tight">
             Elección de consejo estudiantil ANAJAM 2026
           </h1>
-          <p className="text-slate-400 text-sm mt-1">
+          <p className="text-slate-400 text-sm mt-1 transition-all">
             {eleccionActiva ? 'El sistema se encuentra recibiendo los sufragios en las urnas digitales' : 'Escrutinio final verificado por la junta electoral'}
           </p>
         </div>
 
-        {/* CONTENIDO INTERMITENTE */}
+        {/* CONTENIDO INTERMITENTE REACTIVO */}
         {eleccionActiva ? (
-          /* VISTA ABIERTA: Muestra botón para cerrar */
-          <div className="text-center py-12 px-4 bg-slate-950/50 rounded-2xl border border-slate-800 flex flex-col items-center">
+          <div className="text-center py-12 px-4 bg-slate-950/50 rounded-2xl border border-slate-800 flex flex-col items-center animate-fade-in">
             <div className="w-16 h-16 bg-blue-500/10 border border-blue-500/20 text-blue-400 rounded-full flex items-center justify-center text-2xl mb-4 animate-spin">
               ⏳
             </div>
@@ -113,14 +116,13 @@ export default function PantallaVeedor() {
             </button>
           </div>
         ) : (
-          /* VISTA CERRADA: Revela gráficos y opción de reabrir */
-          <div className="space-y-8 animate-fade-in">
+          <div className="space-y-8">
             {Object.keys(votos).map((opcion) => {
               const cantidad = votos[opcion];
               const porcentaje = totalVotos > 0 ? Math.round((cantidad / totalVotos) * 100) : 0;
 
               return (
-                <div key={opcion} className="bg-slate-800/50 p-5 rounded-2xl border border-slate-700/40">
+                <div key={opcion} className="bg-slate-800/50 p-5 rounded-2xl border border-slate-700/40 transform transition-all duration-500">
                   <div className="flex justify-between items-end mb-3">
                     <span className="text-xl font-bold text-white tracking-wide">{opcion}</span>
                     <span className="text-3xl font-black text-red-500">
@@ -144,7 +146,6 @@ export default function PantallaVeedor() {
                 <p className="text-4xl font-black text-white mt-1">{totalVotos} sufragios</p>
               </div>
 
-              {/* Botón para Reabrir Votaciones */}
               <button
                 onClick={() => cambiarEstadoEleccion(true)}
                 className="text-xs font-bold text-slate-500 hover:text-emerald-400 transition-colors uppercase tracking-widest border border-slate-800 hover:border-emerald-500/20 bg-slate-950/40 px-4 py-2 rounded-lg"
