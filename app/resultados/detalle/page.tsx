@@ -136,11 +136,11 @@ export default function DetalleResultados() {
             Proporción Visual y Brecha Escrutada
           </h2>
           
-          <div className="flex justify-around items-end h-64 pt-4 px-4 border-b border-slate-800 gap-4">
+          {/* SE CORRIGIÓ: Se cambió pt-4 por pt-4 pb-8 para empujar el contenido hacia arriba del borde */}
+          <div className="flex justify-around items-end h-72 pt-4 pb-8 px-4 border-b border-slate-800 gap-4">
             {Object.keys(votos).map((opcion) => {
               const cantidad = votos[opcion];
               const porcentaje = totalVotos > 0 ? Math.round((cantidad / totalVotos) * 100) : 0;
-              // Calculamos la altura relativa respecto al ganador para el gráfico de barras verticales
               const alturaGrafica = (cantidad / maxVotos) * 100;
 
               return (
@@ -152,8 +152,9 @@ export default function DetalleResultados() {
                     style={{ height: `${Math.max(alturaGrafica, 6)}%` }}
                     className="w-full max-w-[60px] bg-gradient-to-t from-blue-700 via-blue-500 to-cyan-400 rounded-t-xl transition-all duration-1000 ease-out shadow-lg shadow-blue-500/10 hover:brightness-110"
                   />
-                  <span className="text-sm font-black text-white mt-3 truncate max-w-full">{porcentaje}%</span>
-                  <span className="text-[10px] uppercase font-bold text-slate-400 mt-1 tracking-wider truncate max-w-full">{opcion}</span>
+                  {/* SE CORRIGIÓ: Se añadió mb-1 y mt-4 para distanciar los textos del borde inferior */}
+                  <span className="text-sm font-black text-white mt-4 mb-1 truncate max-w-full">{porcentaje}%</span>
+                  <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider truncate max-w-full">{opcion}</span>
                 </div>
               );
             })}
