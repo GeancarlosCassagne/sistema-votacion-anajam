@@ -5,13 +5,27 @@ export const dynamic = 'force-dynamic';
 import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 
+// 🔑 DEFINE AQUÍ LA CONTRASEÑA DE ADMINISTRADOR QUE DESEES
+const CONTRASEÑA_ADMIN = 'ANAJAM2026'; 
+
 export default function PantallaVeedor() {
   const [votos, setVotos] = useState<{ [key: string]: number }>({});
   const [cargando, setCargando] = useState(true);
   const [eleccionActiva, setEleccionActiva] = useState(true);
   const [descargando, setDescargando] = useState(false);
 
+  // Estados para la validación de seguridad
+  const [autenticado, setAutenticado] = useState(false);
+  const [passwordInput, setPasswordInput] = useState('');
+  const [errorPassword, setErrorPassword] = useState(false);
+
   useEffect(() => {
+    // Verificamos si ya introdujo la contraseña correctamente en esta sesión
+    const sesionValida = sessionStorage.getItem('veedor_autenticado');
+    if (sesionValida === 'true') {
+      setAutenticado(true);
+    }
+
     const cargarDatos = async () => {
       // 1. Obtener votos
       const { data: datosVotos } = await supabase.from('votos').select('*');
@@ -37,7 +51,7 @@ export default function PantallaVeedor() {
 
     cargarDatos();
 
-    // CANAL ÚNICO EN TIEMPO REAL PARA TODO EL PROYECTO
+    // CANAL ÚNICO EN TIEMPO REAL
     const canalSincronizacion = supabase
       .channel('cambios-globales-veedor')
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'votos' }, (payload) => {
@@ -55,6 +69,19 @@ export default function PantallaVeedor() {
     };
   }, []);
 
+  // Función para validar el acceso de administración
+  const manejarLogin = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (passwordInput === CONTRASEÑA_ADMIN) {
+      setAutenticado(true);
+      setErrorPassword(false);
+      sessionStorage.setItem('veedor_autenticado', 'true');
+    } else {
+      setErrorPassword(true);
+      setPasswordInput('');
+    }
+  };
+
   const cambiarEstadoEleccion = async (nuevoEstado: boolean) => {
     const mensaje = nuevoEstado 
       ? '¿Está seguro de REABRIR las votaciones? Los alumnos podrán volver a votar inmediatamente.'
@@ -70,13 +97,11 @@ export default function PantallaVeedor() {
     }
   };
 
-  // FUNCIÓN PARA GENERAR Y DESCARGAR EL EXCEL/CSV CRONOLÓGICO
   const descargarReporteVotos = async () => {
     if (descargando) return;
     setDescargando(true);
 
     try {
-      // Consultamos el historial ordenado ascendentemente por id/fecha_hora
       const { data: historial, error } = await supabase
         .from('historial_votos')
         .select('id, opcion, fecha_hora')
@@ -90,25 +115,19 @@ export default function PantallaVeedor() {
         return;
       }
 
-      // Estructuramos los encabezados del archivo
       let contenidoCsv = "Nro Voto;Opcion Seleccionada;Fecha y Hora del Sufragio\n";
 
-      // Procesamos fila por fila e insertamos los datos limpios
       historial.forEach((voto, index) => {
-        // Formateamos la estampa de tiempo para que Excel la reconozca de inmediato
         const fechaFormateada = new Date(voto.fecha_hora).toLocaleString('es-EC', {
           timeZone: 'America/Guayaquil'
         });
-        
         contenidoCsv += `${index + 1};${voto.opcion};${fechaFormateada}\n`;
       });
 
-      // Insertamos el BOM UTF-8 para obligar a Excel a procesar las tildes y caracteres latinos
       const blob = new Blob([new Uint8Array([0xEF, 0xBB, 0xBF]), contenidoCsv], {
         type: 'text/csv;charset=utf-8;'
       });
 
-      // Disparamos la descarga automática en el navegador
       const link = document.createElement("a");
       const url = URL.createObjectURL(blob);
       link.setAttribute("href", url);
@@ -130,6 +149,47 @@ export default function PantallaVeedor() {
 
   if (cargando) return <div className="p-8 text-center text-white bg-slate-950 h-screen flex items-center justify-center">Cargando escrutinio...</div>;
 
+  // 🔒 SI NO ESTÁ AUTENTICADO, MUESTRA LA PANTALLA DE ACCESO RESTRINGIDO
+  if (!autenticado) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-white flex items-center justify-center p-4 font-sans">
+        <div className="max-w-md w-full bg-slate-900/90 backdrop-blur-md rounded-2xl shadow-2xl p-8 border border-red-900/40 text-center">
+          <div className="mx-auto flex items-center justify-center h-14 w-14 rounded-full bg-red-950 border border-red-500/30 text-red-400 text-2xl mb-4">
+            🔒
+          </div>
+          <h2 className="text-2xl font-black uppercase tracking-tight text-slate-100">Panel Restringido</h2>
+          <p className="text-xs text-slate-400 mt-2 font-medium">
+            Se requiere autenticación de la junta electoral o veedor autorizado para acceder al escrutinio.
+          </p>
+
+          <form onSubmit={manejarLogin} className="mt-6 space-y-4">
+            <div>
+              <input
+                type="password"
+                placeholder="Ingresa la clave de acceso"
+                value={passwordInput}
+                onChange={(e) => setPasswordInput(e.target.value)}
+                className="w-full bg-slate-950 border border-slate-800 focus:border-red-500 rounded-xl px-4 py-3 text-sm text-center font-bold tracking-widest text-white transition-all outline-none"
+              />
+              {errorPassword && (
+                <p className="text-red-500 text-xs font-bold mt-2 animate-pulse">
+                  ⚠️ Contraseña incorrecta. Inténtalo de nuevo.
+                </p>
+              )}
+            </div>
+            <button
+              type="submit"
+              className="w-full bg-gradient-to-r from-red-600 to-red-700 hover:from-red-700 hover:to-red-800 text-white font-black text-xs py-3.5 px-4 rounded-xl transition-all uppercase tracking-wider shadow-md"
+            >
+              Verificar Identidad
+            </button>
+          </form>
+        </div>
+      </div>
+    );
+  }
+
+  // 📡 SI PASA LA VALIDACIÓN, RENDERIZA EL PANEL ORIGINAL DEL VEEDOR
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-950 via-blue-950 to-slate-950 text-white flex flex-col items-center justify-center p-6 font-sans">
       <div className="max-w-3xl w-full bg-slate-900/80 backdrop-blur-md rounded-3xl shadow-2xl p-8 border-2 border-blue-900/50">
@@ -154,7 +214,7 @@ export default function PantallaVeedor() {
 
         {/* CONTENIDO INTERMITENTE REACTIVO */}
         {eleccionActiva ? (
-          <div className="text-center py-12 px-4 bg-slate-550/50 rounded-2xl border border-slate-800 flex flex-col items-center animate-fade-in">
+          <div className="text-center py-12 px-4 bg-slate-850/50 rounded-2xl border border-slate-800 flex flex-col items-center animate-fade-in">
             <div className="w-16 h-16 bg-blue-500/10 border border-blue-500/20 text-blue-400 rounded-full flex items-center justify-center text-2xl mb-4 animate-spin">
               ⏳
             </div>
@@ -200,7 +260,7 @@ export default function PantallaVeedor() {
                 <p className="text-4xl font-black text-white mt-1">{totalVotos} sufragios</p>
               </div>
 
-              {/* NUEVO: Botón de Auditoría Cronológica para Excel */}
+              {/* Botón de Auditoría Cronológica para Excel */}
               <button
                 onClick={descargarReporteVotos}
                 disabled={descargando}
