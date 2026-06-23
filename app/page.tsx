@@ -58,7 +58,7 @@ export default function VotacionEscolar() {
   // Se ejecuta solo cuando presionan "Confirmar Voto" en el modal central
   const confirmarVoto = async () => {
     setMostrarModal(false);
-    setHaVotado(true);
+    setHaVotado(true); // Bloqueo total inmediato en la interfaz
 
     const { data } = await supabase
       .from('votos')
@@ -74,8 +74,14 @@ export default function VotacionEscolar() {
       .eq('opcion', opcionSeleccionada);
 
     if (error) {
-      setHaVotado(false); // Permite reintentar si falla la conexión
+      setHaVotado(false); // Permite reintentar únicamente si falló la red
     }
+  };
+
+  // Función para que el miembro de mesa habilite la pantalla al siguiente alumno
+  const habilitarSiguienteVotante = () => {
+    setOpcionSeleccionada('');
+    setHaVotado(false);
   };
 
   if (cargando) {
@@ -107,39 +113,54 @@ export default function VotacionEscolar() {
           </h1>
           <p className="text-sm text-gray-500 mt-2 font-medium">
             {eleccionActiva 
-              ? 'Por favor, selecciona la opción de tu preferencia. Tu voto es secreto.' 
+              ? (haVotado ? 'Su sufragio ha sido procesado por el sistema.' : 'Por favor, selecciona la opción de tu preferencia. Tu voto es secreto.')
               : 'El proceso de votación ha concluido oficialmente por disposición de la junta electoral.'}
           </p>
         </div>
 
         {/* Contenido Dinámico */}
-        {eleccionActiva ? (
+        {!eleccionActiva ? (
+          /* MESA CERRADA GLOBALMENTE */
+          <div className="text-center py-8 px-4 bg-slate-50 rounded-xl border-2 border-dashed border-slate-200 text-slate-500 font-medium">
+            🔒 El período para ejercer el voto ha finalizado. Agradecemos su participación.
+          </div>
+        ) : haVotado ? (
+          /* PANTALLA DE BLOQUEO POST-VOTO (Muestra éxito y botón de reinicio manual) */
+          <div className="space-y-6 animate-scale-up">
+            <div className="text-center text-md font-bold text-white bg-emerald-600 py-4 px-6 rounded-xl border border-emerald-700 shadow-md">
+              <span className="text-2xl block mb-1">🎉</span>
+              ¡Tu voto ha sido registrado con éxito!
+            </div>
+            
+            <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 text-center">
+              <p className="text-xs text-slate-500 leading-relaxed font-medium">
+                Por favor, retírese de la urna digital para resguardar el secreto del voto y permita que el siguiente estudiante se acerque a la mesa.
+              </p>
+            </div>
+
+            {/* Botón exclusivo para el miembro de mesa */}
+            <div className="pt-4 border-t border-slate-100 flex justify-center">
+              <button
+                onClick={habilitarSiguienteVotante}
+                className="bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs py-2.5 px-5 rounded-lg transition-all uppercase tracking-wider shadow active:scale-[0.98]"
+              >
+                🔄 Siguiente Votante (Uso de la Mesa)
+              </button>
+            </div>
+          </div>
+        ) : (
+          /* PANTALLA DE VOTACIÓN NORMAL (Botones de las listas) */
           <div className="space-y-4">
             {opciones.map((opcion) => (
               <div key={opcion} className="bg-slate-50 p-4 rounded-xl border-2 border-slate-100 hover:border-blue-300 transition-all">
                 <button
-                  disabled={haVotado}
                   onClick={() => previsualizarVoto(opcion)}
-                  className={`w-full py-4 px-6 rounded-xl font-bold text-lg shadow transition-all ${
-                    haVotado
-                      ? 'bg-gray-200 text-gray-400 cursor-not-allowed shadow-none'
-                      : 'bg-gradient-to-r from-blue-800 to-blue-700 hover:from-blue-900 hover:to-blue-800 text-white hover:shadow-lg active:scale-[0.99]'
-                  }`}
+                  className="w-full py-4 px-6 rounded-xl font-bold text-lg shadow transition-all bg-gradient-to-r from-blue-800 to-blue-700 hover:from-blue-900 hover:to-blue-800 text-white hover:shadow-lg active:scale-[0.99]"
                 >
-                  {haVotado ? 'Voto emitido ✓' : `Votar por ${opcion}`}
+                  Votar por {opcion}
                 </button>
               </div>
             ))}
-          </div>
-        ) : (
-          <div className="text-center py-8 px-4 bg-slate-50 rounded-xl border-2 border-dashed border-slate-200 text-slate-500 font-medium">
-            🔒 El período para ejercer el voto ha finalizado. Agradecemos su participación.
-          </div>
-        )}
-
-        {haVotado && eleccionActiva && (
-          <div className="text-center text-md font-bold text-white mt-6 bg-emerald-600 py-3 rounded-xl border border-emerald-700 shadow-md animate-pulse">
-            ¡Tu voto ha sido registrado con éxito! 🎉
           </div>
         )}
 
@@ -154,7 +175,6 @@ export default function VotacionEscolar() {
           <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 border-t-8 border-red-600 transform scale-100 transition-all animate-scale-up">
             
             <div className="text-center">
-              {/* Icono de advertencia estético */}
               <div className="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-red-100 text-red-600 text-xl mb-4">
                 🗳️
               </div>
@@ -172,7 +192,6 @@ export default function VotacionEscolar() {
               </p>
             </div>
 
-            {/* Botones de acción del panel central */}
             <div className="mt-6 flex flex-col sm:flex-row gap-3">
               <button
                 onClick={() => setMostrarModal(false)}
