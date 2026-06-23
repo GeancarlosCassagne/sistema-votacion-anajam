@@ -17,9 +17,17 @@ export default function VotacionEscolar() {
 
   useEffect(() => {
     const inicializarSistema = async () => {
+      // 1. Revisar si localmente ya se emitió un voto en esta máquina
+      const votoLocal = localStorage.getItem('anajam_voto_emitido');
+      if (votoLocal === 'true') {
+        setHaVotado(true);
+      }
+
+      // 2. Traer opciones
       const { data: datosVotos } = await supabase.from('votos').select('opcion');
       if (datosVotos) setOpciones(datosVotos.map((fila) => fila.opcion));
 
+      // 3. Traer estado
       const { data: datosEstado } = await supabase
         .from('estado_eleccion')
         .select('activa')
@@ -32,21 +40,18 @@ export default function VotacionEscolar() {
 
     inicializarSistema();
 
-    // CANAL SEPARADO Y BLINDADO EXCLUSIVAMENTE PARA EL ESTADO GENERAL
+    // ESCUCHA STRICTA: Solo reacciona si el veedor CERRÓ la elección por completo
     const canalEstado = supabase
       .channel('cambios-estado-votante-estricto')
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'estado_eleccion' }, (payload) => {
         const nuevoEstadoGlobal = payload.new.activa;
+        setEleccionActiva(nuevoEstadoGlobal);
         
-        // Guardamos el estado anterior antes de actualizar
-        setEleccionActiva((estadoAnteriorGlobal) => {
-          // SOLO si el veedor cambió las urnas de CERRADAS (false) a ABIERTAS (true), 
-          // permitimos que la pantalla se limpie sola para votar de nuevo.
-          if (estadoAnteriorGlobal === false && nuevoEstadoGlobal === true) {
-            setTimeout(() => setHaVotado(false), 0); // Lo sacamos del hilo de renderizado de React
-          }
-          return nuevoEstadoGlobal;
-        });
+        // Si el veedor decide reabrir de cero todo el sistema, limpiamos el candado local
+        if (nuevoEstadoGlobal === true) {
+          localStorage.removeItem('anajam_voto_emitido');
+          setHaVotado(false);
+        }
       })
       .subscribe();
 
@@ -54,18 +59,19 @@ export default function VotacionEscolar() {
       supabase.removeChannel(canalEstado); 
     };
   }, []);
-
-  // Abre el modal central con la opción elegida
+  
   const previsualizarVoto = (opcion: string) => {
     if (haVotado || !eleccionActiva) return;
     setOpcionSeleccionada(opcion);
     setMostrarModal(true);
   };
 
-  // Se ejecuta solo cuando presionan "Confirmar Voto" en el modal central
   const confirmarVoto = async () => {
     setMostrarModal(false);
-    setHaVotado(true); // Bloqueo total inmediato en la interfaz
+    
+    // GUARDADO LOCAL INMEDIATO: Bloqueamos el navegador al instante
+    localStorage.setItem('anajam_voto_emitido', 'true');
+    setHaVotado(true);
 
     const { data } = await supabase
       .from('votos')
@@ -81,12 +87,15 @@ export default function VotacionEscolar() {
       .eq('opcion', opcionSeleccionada);
 
     if (error) {
-      setHaVotado(false); // Permite reintentar únicamente si falló la red
+      // Si falla la red, limpiamos para que pueda intentar retransmitir
+      localStorage.removeItem('anajam_voto_emitido');
+      setHaVotado(false);
     }
   };
 
-  // Función para que el miembro de mesa habilite la pantalla al siguiente alumno
+  // El miembro de la mesa libera el navegador borrando la clave local
   const habilitarSiguienteVotante = () => {
+    localStorage.removeItem('anajam_voto_emitido');
     setOpcionSeleccionada('');
     setHaVotado(false);
   };
@@ -102,7 +111,6 @@ export default function VotacionEscolar() {
   return (
     <div className="min-h-screen bg-gradient-to-b from-blue-900 via-white to-red-700 py-12 px-4 flex items-center justify-center font-sans relative overflow-hidden">
       
-      {/* Contenedor Principal de la App */}
       <div className="max-w-xl w-full bg-white rounded-2xl shadow-2xl p-8 border-t-8 border-blue-800 z-10">
         
         {/* Encabezado */}
@@ -127,12 +135,10 @@ export default function VotacionEscolar() {
 
         {/* Contenido Dinámico */}
         {!eleccionActiva ? (
-          /* MESA CERRADA GLOBALMENTE */
           <div className="text-center py-8 px-4 bg-slate-50 rounded-xl border-2 border-dashed border-slate-200 text-slate-500 font-medium">
             🔒 El período para ejercer el voto ha finalizado. Agradecemos su participación.
           </div>
         ) : haVotado ? (
-          /* PANTALLA DE BLOQUEO POST-VOTO (Muestra éxito y botón de reinicio manual) */
           <div className="space-y-6 animate-scale-up">
             <div className="text-center text-md font-bold text-white bg-emerald-600 py-4 px-6 rounded-xl border border-emerald-700 shadow-md">
               <span className="text-2xl block mb-1">🎉</span>
@@ -145,7 +151,6 @@ export default function VotacionEscolar() {
               </p>
             </div>
 
-            {/* Botón exclusivo para el miembro de mesa */}
             <div className="pt-4 border-t border-slate-100 flex justify-center">
               <button
                 onClick={habilitarSiguienteVotante}
@@ -156,7 +161,6 @@ export default function VotacionEscolar() {
             </div>
           </div>
         ) : (
-          /* PANTALLA DE VOTACIÓN NORMAL (Botones de las listas) */
           <div className="space-y-4">
             {opciones.map((opcion) => (
               <div key={opcion} className="bg-slate-50 p-4 rounded-xl border-2 border-slate-100 hover:border-blue-300 transition-all">
@@ -176,7 +180,7 @@ export default function VotacionEscolar() {
         </div>
       </div>
 
-      {/* BANNER / MODAL PERSONALIZADO EN EL CENTRO DE LA PANTALLA */}
+      {/* MODAL PERSONALIZADO */}
       {mostrarModal && (
         <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fade-in">
           <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 border-t-8 border-red-600 transform scale-100 transition-all animate-scale-up">
