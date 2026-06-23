@@ -18,9 +18,11 @@ export default function VotacionEscolar() {
 
   useEffect(() => {
     const inicializarSistema = async () => {
+      // Cargamos las opciones disponibles de la tabla votos
       const { data: datosVotos } = await supabase.from('votos').select('opcion');
       if (datosVotos) setOpciones(datosVotos.map((fila) => fila.opcion));
 
+      // Cargamos el estado general
       const { data: datosEstado } = await supabase
         .from('estado_eleccion')
         .select('activa')
@@ -33,6 +35,7 @@ export default function VotacionEscolar() {
 
     inicializarSistema();
 
+    // Sincronización en tiempo real con el panel del veedor
     const canalEstado = supabase
       .channel('cambios-estado-votante-estricto')
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'estado_eleccion' }, (payload) => {
@@ -61,36 +64,38 @@ export default function VotacionEscolar() {
   const confirmarVoto = async () => {
     if (procesandoVoto) return;
     
-    // 1. Bloqueamos el modal internamente para mitigar spam de clics
     setProcesandoVoto(true);
 
     try {
-      // 2. Traemos el conteo actual asegurando la respuesta de la red
-      const { data, error: errorFetch } = await supabase
+      // TRAEMOS EL CONTEO ACTUAL DE LA OPCIÓN SELECCIONADA
+      const { data: filaActual, error: errorFetch } = await supabase
         .from('votos')
-        .select('*')
+        .select('cantidad')
         .eq('opcion', opcionSeleccionada)
-        .single();
+        .maybeSingle();
 
       if (errorFetch) throw errorFetch;
 
-      const cantidadActual = data?.cantidad !== undefined ? data.cantidad : (data?.quantity || 0);
+      // Calculamos la nueva cantidad sumando 1 al valor actual
+      const nuevaCantidad = (filaActual?.cantidad || 0) + 1;
 
-      // 3. Enviamos la actualización y esperamos que Supabase confirme el recibido
-      const { error: errorUpdate } = await supabase
+      // HACEMOS UN UPSERT (Inserta o actualiza de forma segura según el campo 'opcion')
+      const { error: errorUpsert } = await supabase
         .from('votos')
-        .update({ cantidad: cantidadActual + 1, quantity: cantidadActual + 1 })
-        .eq('opcion', opcionSeleccionada);
+        .upsert({ 
+          opcion: opcionSeleccionada, 
+          cantidad: nuevaCantidad 
+        }, { onConflict: 'opcion' });
 
-      if (errorUpdate) throw errorUpdate;
+      if (errorUpsert) throw errorUpsert;
 
-      // 4. SOLO cuando la base de datos guardó todo con éxito, cambiamos la pantalla
+      // Si todo sale bien, bloqueamos la pantalla del alumno y cerramos el modal
       setHaVotado(true);
       setMostrarModal(false);
+
     } catch (error) {
       console.error("Error al registrar el voto:", error);
-      // Si algo falla, liberamos el botón para que el alumno pueda volver a intentar
-      alert("Hubo un inconveniente de conexión. Por favor, intenta confirmar tu voto nuevamente.");
+      alert("Inconveniente al registrar el voto. Por favor, intenta presionar Confirmar nuevamente.");
     } finally {
       setProcesandoVoto(false);
     }
@@ -142,7 +147,7 @@ export default function VotacionEscolar() {
             🔒 El período para ejercer el voto ha finalizado. Agradecemos su participación.
           </div>
         ) : haVotado ? (
-          /* PANTALLA DE ÉXITO FIJA POST-VOTO */
+          /* PANTALLA DE ÉXITO FIJA */
           <div className="space-y-6 animate-scale-up">
             <div className="text-center text-md font-bold text-white bg-emerald-600 py-4 px-6 rounded-xl border border-emerald-700 shadow-md">
               <span className="text-2xl block mb-1">🎉</span>
@@ -165,7 +170,7 @@ export default function VotacionEscolar() {
             </div>
           </div>
         ) : (
-          /* BOTONES DE VOTACIÓN */
+          /* BOTONES DE LISTAS */
           <div className="space-y-4">
             {opciones.map((opcion) => (
               <div key={opcion} className="bg-slate-50 p-4 rounded-xl border-2 border-slate-100 hover:border-blue-300 transition-all">
@@ -186,7 +191,7 @@ export default function VotacionEscolar() {
         </div>
       </div>
 
-      {/* MODAL PERSONALIZADO CENTRADO */}
+      {/* MODAL PERSONALIZADO */}
       {mostrarModal && (
         <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fade-in">
           <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 border-t-8 border-red-600 transform scale-100 transition-all animate-scale-up">
@@ -213,14 +218,14 @@ export default function VotacionEscolar() {
               <button
                 disabled={procesandoVoto}
                 onClick={() => setMostrarModal(false)}
-                className="w-full order-2 sm:order-1 py-3 px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl transition-colors text-sm uppercase tracking-wider disabled:opacity-50"
+                className="w-full order-2 sm:order-1 py-3 px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl transition-colors text-sm uppercase tracking-wider"
               >
                 Regresar
               </button>
               <button
                 disabled={procesandoVoto}
                 onClick={confirmarVoto}
-                className="w-full order-1 sm:order-2 py-3 px-4 bg-gradient-to-r from-red-600 to-red-700 hover:from-red-700 hover:to-red-800 text-white font-black rounded-xl shadow-md hover:shadow-lg transition-all text-sm uppercase tracking-wider active:scale-[0.98] disabled:from-gray-400 disabled:to-gray-500"
+                className="w-full order-1 sm:order-2 py-3 px-4 bg-gradient-to-r from-red-600 to-red-700 hover:from-red-700 hover:to-red-800 text-white font-black rounded-xl shadow-md hover:shadow-lg transition-all text-sm uppercase tracking-wider active:scale-[0.98]"
               >
                 {procesandoVoto ? 'Guardando Voto...' : 'Confirmar Voto'}
               </button>
