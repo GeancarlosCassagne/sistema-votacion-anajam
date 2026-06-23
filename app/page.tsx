@@ -28,33 +28,31 @@ export default function VotacionEscolar() {
 
     inicializarSistema();
 
-    // CANAL CORREGIDO: Usamos el mismo identificador global para forzar la reactividad inmediata
     const canalEstado = supabase
       .channel('cambios-globales-veedor')
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'estado_eleccion' }, (payload) => {
         const nuevoEstado = payload.new.activa;
-        
-        // Forzamos a React a enterarse del cambio de estado al milisegundo
         setEleccionActiva(nuevoEstado);
         
         if (nuevoEstado === true) {
           setHaVotado(false);
         }
       })
-      .subscribe((status) => {
-        // Log temporal en consola para verificar que la tablet/celular esté conectada en vivo
-        console.log("Estado de conexión en votante:", status);
-      });
+      .subscribe();
 
-    return () => { 
-      supabase.removeChannel(canalEstado); 
-    };
+    return () => { supabase.removeChannel(canalEstado); };
   }, []);
 
   const manejarVoto = async (opcionSeleccionada: string) => {
     if (haVotado || !eleccionActiva) return;
 
-    // Ponemos en true inmediatamente para mitigar doble click accidental
+    // BANNER DE VALIDACIÓN: Pregunta al alumno si está seguro antes de guardar nada
+    const seguro = window.confirm(`¿Está seguro de que desea emitir su voto por: "${opcionSeleccionada}"? Una vez confirmado, no podrá cambiar su elección.`);
+    
+    // Si el alumno presiona "Cancelar", detenemos la función y no pasa nada
+    if (!seguro) return;
+
+    // Si presiona "Aceptar", bloqueamos el botón inmediatamente para mitigar doble clic
     setHaVotado(true);
 
     const { data } = await supabase
@@ -67,11 +65,11 @@ export default function VotacionEscolar() {
 
     const { error } = await supabase
       .from('votos')
-      .update({ cantidad: cantidadActual + 1, quantity: cantidadActual + 1 }) // Sincroniza ambos nombres de columnas posibles
+      .update({ cantidad: cantidadActual + 1, quantity: cantidadActual + 1 })
       .eq('opcion', opcionSeleccionada);
 
     if (error) {
-      setHaVotado(false); // Si falló la red, permite reintentar
+      setHaVotado(false); // Si falla la conexión por red, le permite reintentar
     }
   };
 
@@ -100,7 +98,7 @@ export default function VotacionEscolar() {
           <h1 className="text-2xl font-black text-blue-900 mt-3 uppercase tracking-tight">
             Elección de consejo estudiantil ANAJAM 2026
           </h1>
-          <p className="text-sm text-gray-500 mt-2 font-medium transition-all">
+          <p className="text-sm text-gray-500 mt-2 font-medium">
             {eleccionActiva 
               ? 'Por favor, selecciona la opción de tu preferencia. Tu voto es secreto.' 
               : 'El proceso de votación ha concluido oficialmente por disposición de la junta electoral.'}
@@ -127,7 +125,7 @@ export default function VotacionEscolar() {
             ))}
           </div>
         ) : (
-          <div className="text-center py-8 px-4 bg-slate-50 rounded-xl border-2 border-dashed border-slate-200 text-slate-500 font-medium animate-fade-in">
+          <div className="text-center py-8 px-4 bg-slate-50 rounded-xl border-2 border-dashed border-slate-200 text-slate-500 font-medium">
             🔒 El período para ejercer el voto ha finalizado. Agradecemos su participación.
           </div>
         )}
