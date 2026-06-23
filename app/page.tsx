@@ -38,10 +38,15 @@ export default function VotacionEscolar() {
         const nuevoEstado = payload.new.activa;
         setEleccionActiva(nuevoEstado);
         
-        if (nuevoEstado === true) {
-          setHaVotado(false);
-          setMostrarModal(false);
-        }
+        // CORRECCIÓN CLAVE: Solo reseteamos el voto automáticamente si la elección 
+        // pasa de estar CERRADA a ABIERTA globalmente (por ejemplo, en un reinicio desde el veedor).
+        // Si ya estaba abierta, ignoramos el evento para que no borre la pantalla de éxito.
+        setEleccionActiva((prevEstadoAnterior) => {
+          if (!prevEstadoAnterior && nuevoEstado === true) {
+            setHaVotado(false);
+          }
+          return nuevoEstado;
+        });
       })
       .subscribe();
 
