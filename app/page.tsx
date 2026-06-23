@@ -11,6 +11,10 @@ export default function VotacionEscolar() {
   const [haVotado, setHaVotado] = useState(false);
   const [eleccionActiva, setEleccionActiva] = useState(true);
 
+  // Estados para controlar el Modal personalizado
+  const [mostrarModal, setMostrarModal] = useState(false);
+  const [opcionSeleccionada, setOpcionSeleccionada] = useState('');
+
   useEffect(() => {
     const inicializarSistema = async () => {
       const { data: datosVotos } = await supabase.from('votos').select('opcion');
@@ -36,6 +40,7 @@ export default function VotacionEscolar() {
         
         if (nuevoEstado === true) {
           setHaVotado(false);
+          setMostrarModal(false);
         }
       })
       .subscribe();
@@ -43,16 +48,16 @@ export default function VotacionEscolar() {
     return () => { supabase.removeChannel(canalEstado); };
   }, []);
 
-  const manejarVoto = async (opcionSeleccionada: string) => {
+  // Abre el modal central con la opción elegida
+  const previsualizarVoto = (opcion: string) => {
     if (haVotado || !eleccionActiva) return;
+    setOpcionSeleccionada(opcion);
+    setMostrarModal(true);
+  };
 
-    // BANNER DE VALIDACIÓN: Pregunta al alumno si está seguro antes de guardar nada
-    const seguro = window.confirm(`¿Está seguro de que desea emitir su voto por: "${opcionSeleccionada}"? Una vez confirmado, no podrá cambiar su elección.`);
-    
-    // Si el alumno presiona "Cancelar", detenemos la función y no pasa nada
-    if (!seguro) return;
-
-    // Si presiona "Aceptar", bloqueamos el botón inmediatamente para mitigar doble clic
+  // Se ejecuta solo cuando presionan "Confirmar Voto" en el modal central
+  const confirmarVoto = async () => {
+    setMostrarModal(false);
     setHaVotado(true);
 
     const { data } = await supabase
@@ -69,7 +74,7 @@ export default function VotacionEscolar() {
       .eq('opcion', opcionSeleccionada);
 
     if (error) {
-      setHaVotado(false); // Si falla la conexión por red, le permite reintentar
+      setHaVotado(false); // Permite reintentar si falla la conexión
     }
   };
 
@@ -82,8 +87,10 @@ export default function VotacionEscolar() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-blue-900 via-white to-red-700 py-12 px-4 flex items-center justify-center font-sans">
-      <div className="max-w-xl w-full bg-white rounded-2xl shadow-2xl p-8 border-t-8 border-blue-800">
+    <div className="min-h-screen bg-gradient-to-b from-blue-900 via-white to-red-700 py-12 px-4 flex items-center justify-center font-sans relative overflow-hidden">
+      
+      {/* Contenedor Principal de la App */}
+      <div className="max-w-xl w-full bg-white rounded-2xl shadow-2xl p-8 border-t-8 border-blue-800 z-10">
         
         {/* Encabezado */}
         <div className="text-center mb-8 flex flex-col items-center">
@@ -112,7 +119,7 @@ export default function VotacionEscolar() {
               <div key={opcion} className="bg-slate-50 p-4 rounded-xl border-2 border-slate-100 hover:border-blue-300 transition-all">
                 <button
                   disabled={haVotado}
-                  onClick={() => manejarVoto(opcion)}
+                  onClick={() => previsualizarVoto(opcion)}
                   className={`w-full py-4 px-6 rounded-xl font-bold text-lg shadow transition-all ${
                     haVotado
                       ? 'bg-gray-200 text-gray-400 cursor-not-allowed shadow-none'
@@ -140,6 +147,51 @@ export default function VotacionEscolar() {
           ANAJAM • Sistema de Votación Automatizado
         </div>
       </div>
+
+      {/* BANNER / MODAL PERSONALIZADO EN EL CENTRO DE LA PANTALLA */}
+      {mostrarModal && (
+        <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fade-in">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 border-t-8 border-red-600 transform scale-100 transition-all animate-scale-up">
+            
+            <div className="text-center">
+              {/* Icono de advertencia estético */}
+              <div className="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-red-100 text-red-600 text-xl mb-4">
+                🗳️
+              </div>
+              <h3 className="text-xl font-black text-slate-900 uppercase tracking-tight">
+                ¿Confirmar tu voto?
+              </h3>
+              <div className="mt-3 px-2 py-4 bg-slate-50 rounded-xl border border-slate-200">
+                <p className="text-xs text-slate-400 uppercase tracking-wider font-bold">Has seleccionado:</p>
+                <p className="text-2xl font-black text-blue-900 mt-1 tracking-wide">
+                  {opcionSeleccionada}
+                </p>
+              </div>
+              <p className="text-xs text-slate-500 mt-4 leading-relaxed">
+                Una vez que presiones <strong>Confirmar Voto</strong>, tu decisión se enviará de forma permanente y la urna digital se cerrará para el siguiente estudiante.
+              </p>
+            </div>
+
+            {/* Botones de acción del panel central */}
+            <div className="mt-6 flex flex-col sm:flex-row gap-3">
+              <button
+                onClick={() => setMostrarModal(false)}
+                className="w-full order-2 sm:order-1 py-3 px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl transition-colors text-sm uppercase tracking-wider"
+              >
+                Regresar
+              </button>
+              <button
+                onClick={confirmarVoto}
+                className="w-full order-1 sm:order-2 py-3 px-4 bg-gradient-to-r from-red-600 to-red-700 hover:from-red-700 hover:to-red-800 text-white font-black rounded-xl shadow-md hover:shadow-lg transition-all text-sm uppercase tracking-wider active:scale-[0.98]"
+              >
+                Confirmar Voto
+              </button>
+            </div>
+
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
