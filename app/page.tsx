@@ -25,32 +25,34 @@ export default function VotacionEscolar() {
         .select('activa')
         .eq('id', 'configuracion_general')
         .single();
+      
       if (datosEstado) setEleccionActiva(datosEstado.activa);
-
       setCargando(false);
     };
 
     inicializarSistema();
 
+    // CANAL SEPARADO Y BLINDADO EXCLUSIVAMENTE PARA EL ESTADO GENERAL
     const canalEstado = supabase
-      .channel('cambios-globales-veedor')
+      .channel('cambios-estado-votante-estricto')
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'estado_eleccion' }, (payload) => {
-        const nuevoEstado = payload.new.activa;
-        setEleccionActiva(nuevoEstado);
+        const nuevoEstadoGlobal = payload.new.activa;
         
-        // CORRECCIÓN CLAVE: Solo reseteamos el voto automáticamente si la elección 
-        // pasa de estar CERRADA a ABIERTA globalmente (por ejemplo, en un reinicio desde el veedor).
-        // Si ya estaba abierta, ignoramos el evento para que no borre la pantalla de éxito.
-        setEleccionActiva((prevEstadoAnterior) => {
-          if (!prevEstadoAnterior && nuevoEstado === true) {
-            setHaVotado(false);
+        // Guardamos el estado anterior antes de actualizar
+        setEleccionActiva((estadoAnteriorGlobal) => {
+          // SOLO si el veedor cambió las urnas de CERRADAS (false) a ABIERTAS (true), 
+          // permitimos que la pantalla se limpie sola para votar de nuevo.
+          if (estadoAnteriorGlobal === false && nuevoEstadoGlobal === true) {
+            setTimeout(() => setHaVotado(false), 0); // Lo sacamos del hilo de renderizado de React
           }
-          return nuevoEstado;
+          return nuevoEstadoGlobal;
         });
       })
       .subscribe();
 
-    return () => { supabase.removeChannel(canalEstado); };
+    return () => { 
+      supabase.removeChannel(canalEstado); 
+    };
   }, []);
 
   // Abre el modal central con la opción elegida
