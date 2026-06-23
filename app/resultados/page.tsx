@@ -83,7 +83,7 @@ export default function PantallaVeedor() {
         {/* Encabezado */}
         <div className="text-center mb-10 flex flex-col items-center">
           <div className="w-20 h-20 mb-3 bg-white/10 p-2 rounded-2xl border border-white/20">
-            <img src="/logoanajam.png" alt="Logo ANAJAM" className="w-full h-full object-contain" />
+            <img src="/fondoblanco.png" alt="Logo ANAJAM" className="w-full h-full object-contain" />
           </div>
           <span className={`text-white text-xs font-black px-4 py-1 rounded-full uppercase tracking-widest shadow-md transition-all duration-500 ${
             eleccionActiva ? 'bg-emerald-600 animate-pulse' : 'bg-red-600'
