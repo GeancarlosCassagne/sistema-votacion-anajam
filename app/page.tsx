@@ -11,23 +11,15 @@ export default function VotacionEscolar() {
   const [haVotado, setHaVotado] = useState(false);
   const [eleccionActiva, setEleccionActiva] = useState(true);
 
-  // Estados para controlar el Modal personalizado
+  // Estados del Modal
   const [mostrarModal, setMostrarModal] = useState(false);
   const [opcionSeleccionada, setOpcionSeleccionada] = useState('');
 
   useEffect(() => {
     const inicializarSistema = async () => {
-      // 1. Revisar si localmente ya se emitió un voto en esta máquina
-      const votoLocal = localStorage.getItem('anajam_voto_emitido');
-      if (votoLocal === 'true') {
-        setHaVotado(true);
-      }
-
-      // 2. Traer opciones
       const { data: datosVotos } = await supabase.from('votos').select('opcion');
       if (datosVotos) setOpciones(datosVotos.map((fila) => fila.opcion));
 
-      // 3. Traer estado
       const { data: datosEstado } = await supabase
         .from('estado_eleccion')
         .select('activa')
@@ -40,17 +32,17 @@ export default function VotacionEscolar() {
 
     inicializarSistema();
 
-    // ESCUCHA STRICTA: Solo reacciona si el veedor CERRÓ la elección por completo
+    // CANAL EXCLUSIVO: Solo escucha si el veedor abre o cierra el proceso general
     const canalEstado = supabase
       .channel('cambios-estado-votante-estricto')
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'estado_eleccion' }, (payload) => {
         const nuevoEstadoGlobal = payload.new.activa;
         setEleccionActiva(nuevoEstadoGlobal);
         
-        // Si el veedor decide reabrir de cero todo el sistema, limpiamos el candado local
+        // Si el veedor reabre el proceso de forma global, reseteamos la pantalla
         if (nuevoEstadoGlobal === true) {
-          localStorage.removeItem('anajam_voto_emitido');
           setHaVotado(false);
+          setMostrarModal(false);
         }
       })
       .subscribe();
@@ -67,10 +59,7 @@ export default function VotacionEscolar() {
   };
 
   const confirmarVoto = async () => {
-    setMostrarModal(false);
-    
-    // GUARDADO LOCAL INMEDIATO: Bloqueamos el navegador al instante
-    localStorage.setItem('anajam_voto_emitido', 'true');
+    // EL TRUCO DE ESTABILIDAD: Bloqueamos la pantalla del fondo inmediatamente
     setHaVotado(true);
 
     const { data } = await supabase
@@ -86,18 +75,19 @@ export default function VotacionEscolar() {
       .update({ cantidad: cantidadActual + 1, quantity: cantidadActual + 1 })
       .eq('opcion', opcionSeleccionada);
 
-    if (error) {
-      // Si falla la red, limpiamos para que pueda intentar retransmitir
-      localStorage.removeItem('anajam_voto_emitido');
+    if (!error) {
+      // SOLO si la base de datos aceptó el voto con éxito, cerramos el modal
+      setMostrarModal(false);
+    } else {
+      // Si hubo un error de red, liberamos el formulario para reintentar
       setHaVotado(false);
     }
   };
 
-  // El miembro de la mesa libera el navegador borrando la clave local
   const habilitarSiguienteVotante = () => {
-    localStorage.removeItem('anajam_voto_emitido');
     setOpcionSeleccionada('');
     setHaVotado(false);
+    setMostrarModal(false);
   };
 
   if (cargando) {
@@ -138,7 +128,8 @@ export default function VotacionEscolar() {
           <div className="text-center py-8 px-4 bg-slate-50 rounded-xl border-2 border-dashed border-slate-200 text-slate-500 font-medium">
             🔒 El período para ejercer el voto ha finalizado. Agradecemos su participación.
           </div>
-        ) : haVotado ? (
+        ) : haVotado && !mostrarModal ? (
+          /* PANTALLA DE ÉXITO FIJA POST-VOTO */
           <div className="space-y-6 animate-scale-up">
             <div className="text-center text-md font-bold text-white bg-emerald-600 py-4 px-6 rounded-xl border border-emerald-700 shadow-md">
               <span className="text-2xl block mb-1">🎉</span>
@@ -161,10 +152,12 @@ export default function VotacionEscolar() {
             </div>
           </div>
         ) : (
+          /* BOTONES DE VOTACIÓN */
           <div className="space-y-4">
             {opciones.map((opcion) => (
               <div key={opcion} className="bg-slate-50 p-4 rounded-xl border-2 border-slate-100 hover:border-blue-300 transition-all">
                 <button
+                  disabled={haVotado}
                   onClick={() => previsualizarVoto(opcion)}
                   className="w-full py-4 px-6 rounded-xl font-bold text-lg shadow transition-all bg-gradient-to-r from-blue-800 to-blue-700 hover:from-blue-900 hover:to-blue-800 text-white hover:shadow-lg active:scale-[0.99]"
                 >
@@ -180,7 +173,7 @@ export default function VotacionEscolar() {
         </div>
       </div>
 
-      {/* MODAL PERSONALIZADO */}
+      {/* MODAL PERSONALIZADO CENTRADO */}
       {mostrarModal && (
         <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fade-in">
           <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 border-t-8 border-red-600 transform scale-100 transition-all animate-scale-up">
@@ -205,16 +198,18 @@ export default function VotacionEscolar() {
 
             <div className="mt-6 flex flex-col sm:flex-row gap-3">
               <button
+                disabled={haVotado}
                 onClick={() => setMostrarModal(false)}
-                className="w-full order-2 sm:order-1 py-3 px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl transition-colors text-sm uppercase tracking-wider"
+                className="w-full order-2 sm:order-1 py-3 px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl transition-colors text-sm uppercase tracking-wider disabled:opacity-50"
               >
                 Regresar
               </button>
               <button
+                disabled={haVotado}
                 onClick={confirmarVoto}
-                className="w-full order-1 sm:order-2 py-3 px-4 bg-gradient-to-r from-red-600 to-red-700 hover:from-red-700 hover:to-red-800 text-white font-black rounded-xl shadow-md hover:shadow-lg transition-all text-sm uppercase tracking-wider active:scale-[0.98]"
+                className="w-full order-1 sm:order-2 py-3 px-4 bg-gradient-to-r from-red-600 to-red-700 hover:from-red-700 hover:to-red-800 text-white font-black rounded-xl shadow-md hover:shadow-lg transition-all text-sm uppercase tracking-wider active:scale-[0.98] disabled:from-gray-400 disabled:to-gray-500"
               >
-                Confirmar Voto
+                {haVotado ? 'Procesando...' : 'Confirmar Voto'}
               </button>
             </div>
 
