@@ -18,11 +18,8 @@ export default function VotacionEscolar() {
 
   useEffect(() => {
     const inicializarSistema = async () => {
-      // 🔮 AQUÍ SE COLOCA: Reemplaza tu consulta anterior por esta ordenada desde la base de datos
-      const { data: datosVotos } = await supabase
-        .from('votos')
-        .select('opcion')
-        .order('opcion', { ascending: true }); // 👈 Ordena de la A a la Z directamente en Supabase
+      const { data: datosVotos } = await supabase.from('votos').select('opcion');
+      if (datosVotos) setOpciones(datosVotos.map((fila) => fila.opcion));
 
       const { data: datosEstado } = await supabase
         .from('estado_eleccion')
