@@ -18,8 +18,16 @@ export default function VotacionEscolar() {
 
   useEffect(() => {
     const inicializarSistema = async () => {
-      const { data: datosVotos } = await supabase.from('votos').select('opcion');
-      if (datosVotos) setOpciones(datosVotos.map((fila) => fila.opcion));
+      // 🔄 Cambiamos .from('votos') por la nueva vista virtual '.from('lista_votos_ordenada')'
+      const { data: datosVotos } = await supabase
+        .from('lista_votos_ordenada')
+        .select('opcion');
+
+      if (datosVotos) {
+        // Como la vista ya viene perfectamente ordenada desde PostgreSQL, 
+        // guardamos las opciones directamente y saldrán en orden impecable.
+        setOpciones(datosVotos.map((fila) => fila.opcion));
+      }
 
       const { data: datosEstado } = await supabase
         .from('estado_eleccion')
