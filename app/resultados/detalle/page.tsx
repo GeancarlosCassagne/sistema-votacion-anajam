@@ -22,7 +22,8 @@ export default function DetalleResultados() {
     }
 
     const cargarDatos = async () => {
-      const { data: datosVotos } = await supabase.from('votos').select('*');
+      // 🔄 CAMBIO: Consultamos la vista ordenada para que las barras verticales sigan el mismo orden (A primero, B después)
+      const { data: datosVotos } = await supabase.from('lista_votos_ordenada').select('*');
       if (datosVotos) {
         const mapaVotos: { [key: string]: number } = {};
         datosVotos.forEach((fila) => { 
