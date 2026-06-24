@@ -65,10 +65,22 @@ export default function DetalleResultados() {
       }
 
       let contenidoCsv = "Nro Voto;Opcion Seleccionada;Fecha y Hora del Sufragio\n";
+      
       historial.forEach((voto, index) => {
-        const fechaFormateada = new Date(voto.fecha_hora).toLocaleString('es-EC', {
-          timeZone: 'America/Guayaquil'
+        // CORRECCIÓN: Forzamos al objeto Date a interpretar la estampa de tiempo 
+        // y la formateamos explícitamente en la zona horaria de Ecuador (es-EC)
+        const fechaObjeto = new Date(voto.fecha_hora);
+        const fechaFormateada = fechaObjeto.toLocaleString('es-EC', {
+          timeZone: 'America/Guayaquil',
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit',
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit',
+          hour12: true // Muestra el formato AM/PM de manera clara
         });
+        
         contenidoCsv += `${index + 1};${voto.opcion};${fechaFormateada}\n`;
       });
 
