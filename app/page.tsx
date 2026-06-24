@@ -5,6 +5,9 @@ export const dynamic = 'force-dynamic';
 import { useEffect, useState } from 'react';
 import { supabase } from './lib/supabase';
 
+// 🔑 CONTRASEÑA PARA DESBLOQUEAR ESTA TABLET/MESA DE VOTACIÓN
+const CONTRASEÑA_VOTANTE = 'URNAS2026'; 
+
 export default function VotacionEscolar() {
   const [opciones, setOpciones] = useState<string[]>([]);
   const [cargando, setCargando] = useState(true);
@@ -16,16 +19,25 @@ export default function VotacionEscolar() {
   const [opcionSeleccionada, setOpcionSeleccionada] = useState('');
   const [procesandoVoto, setProcesandoVoto] = useState(false);
 
+  // Estados de Validación de Seguridad para la Estación
+  const [autenticado, setAutenticado] = useState(false);
+  const [passwordInput, setPasswordInput] = useState('');
+  const [errorPassword, setErrorPassword] = useState(false);
+
   useEffect(() => {
+    // Verificamos si esta mesa ya fue activada previamente en esta pestaña
+    const sesionValida = sessionStorage.getItem('urna_desbloqueada');
+    if (sesionValida === 'true') {
+      setAutenticado(true);
+    }
+
     const inicializarSistema = async () => {
-      // 🔄 Cambiamos .from('votos') por la nueva vista virtual '.from('lista_votos_ordenada')'
+      // 🔄 Consultamos tu nueva vista ordenada directamente desde PostgreSQL (Lista A siempre arriba)
       const { data: datosVotos } = await supabase
         .from('lista_votos_ordenada')
         .select('opcion');
 
       if (datosVotos) {
-        // Como la vista ya viene perfectamente ordenada desde PostgreSQL, 
-        // guardamos las opciones directamente y saldrán en orden impecable.
         setOpciones(datosVotos.map((fila) => fila.opcion));
       }
 
@@ -59,6 +71,18 @@ export default function VotacionEscolar() {
       supabase.removeChannel(canalEstado); 
     };
   }, []);
+
+  const manejarDesbloqueoUrna = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (passwordInput === CONTRASEÑA_VOTANTE) {
+      setAutenticado(true);
+      setErrorPassword(false);
+      sessionStorage.setItem('urna_desbloqueada', 'true');
+    } else {
+      setErrorPassword(true);
+      setPasswordInput('');
+    }
+  };
   
   const previsualizarVoto = (opcion: string) => {
     if (haVotado || !eleccionActiva || procesandoVoto) return;
@@ -85,7 +109,7 @@ export default function VotacionEscolar() {
         .from('votos')
         .upsert({ opcion: opcionSeleccionada, cantidad: nuevaCantidad }, { onConflict: 'opcion' });
 
-      // 2. GUARDA EN EL HISTORIAL (Registra voto individual con fecha y hora automática)
+      // 2. GUARDA EN EL HISTORIAL (Registra el voto con la estampa UTC limpia)
       await supabase
         .from('historial_votos')
         .insert({ opcion: opcionSeleccionada });
@@ -112,6 +136,30 @@ export default function VotacionEscolar() {
     return (
       <div className="flex h-screen items-center justify-center bg-white text-xl font-medium text-blue-900">
         Cargando sistema de votación...
+      </div>
+    );
+  }
+
+  // 🔒 PANTALLA DE PROTECCIÓN: Exige la contraseña al docente para abrir la estación de votación
+  if (!autenticado) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-white flex items-center justify-center p-4 font-sans">
+        <div className="max-w-md w-full bg-slate-900/90 backdrop-blur-md rounded-2xl shadow-2xl p-8 border border-blue-900/40 text-center">
+          <div className="mx-auto flex items-center justify-center h-14 w-14 rounded-full bg-blue-950 border border-blue-500/30 text-blue-400 text-2xl mb-4">🗳️</div>
+          <h2 className="text-2xl font-black uppercase tracking-tight text-slate-100">Urna Protegida</h2>
+          <p className="text-xs text-slate-400 mt-2 font-medium">El docente técnico debe ingresar la credencial para habilitar esta estación de sufragio.</p>
+          <form onSubmit={manejarDesbloqueoUrna} className="mt-6 space-y-4">
+            <input
+              type="password"
+              placeholder="Clave de apertura de mesa"
+              value={passwordInput}
+              onChange={(e) => setPasswordInput(e.target.value)}
+              className="w-full bg-slate-950 border border-slate-800 focus:border-blue-500 rounded-xl px-4 py-3 text-sm text-center font-bold tracking-widest text-white transition-all outline-none"
+            />
+            {errorPassword && <p className="text-red-500 text-xs font-bold mt-2 animate-pulse">⚠️ Clave incorrecta. Inténtalo de nuevo.</p>}
+            <button type="submit" className="w-full bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white font-black text-xs py-3.5 px-4 rounded-xl uppercase tracking-wider transition-all">Habilitar Estación</button>
+          </form>
+        </div>
       </div>
     );
   }
@@ -170,17 +218,33 @@ export default function VotacionEscolar() {
           </div>
         ) : (
           <div className="space-y-4">
-            {opciones.map((opcion) => (
-              <div key={opcion} className="bg-slate-50 p-4 rounded-xl border-2 border-slate-100 hover:border-blue-300 transition-all">
-                <button
-                  disabled={procesandoVoto}
-                  onClick={() => previsualizarVoto(opcion)}
-                  className="w-full py-4 px-6 rounded-xl font-bold text-lg shadow transition-all bg-gradient-to-r from-blue-800 to-blue-700 hover:from-blue-900 hover:to-blue-800 text-white hover:shadow-lg active:scale-[0.99]"
+            {opciones.map((opcion) => {
+              // Condicional estética: Evaluamos si es la Lista A para renderizar en gama roja
+              const esListaA = opcion.toUpperCase() === 'LISTA A';
+
+              return (
+                <div 
+                  key={opcion} 
+                  className={`p-4 rounded-xl border-2 transition-all ${
+                    esListaA 
+                      ? 'bg-red-50/50 border-red-100 hover:border-red-300' 
+                      : 'bg-slate-50 border-slate-100 hover:border-blue-300'
+                  }`}
                 >
-                  Votar por {opcion}
-                </button>
-              </div>
-            ))}
+                  <button
+                    disabled={procesandoVoto}
+                    onClick={() => previsualizarVoto(opcion)}
+                    className={`w-full py-4 px-6 rounded-xl font-bold text-lg shadow transition-all hover:shadow-lg active:scale-[0.99] ${
+                      esListaA
+                        ? 'bg-gradient-to-r from-red-600 to-red-700 hover:from-red-700 hover:to-red-800 text-white'
+                        : 'bg-gradient-to-r from-blue-800 to-blue-700 hover:from-blue-900 hover:to-blue-800 text-white'
+                    }`}
+                  >
+                    Votar por {opcion}
+                  </button>
+                </div>
+              );
+            })}
           </div>
         )}
 

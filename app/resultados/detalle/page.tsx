@@ -6,6 +6,9 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '../../lib/supabase';
 
+// 🔑 CLAVE MAESTRA REQUERIDA PARA ACCEDER AL REPORTE DETALLADO
+const CONTRASEÑA_ADMIN = 'ANAJAM2026'; 
+
 export default function DetalleResultados() {
   const [votos, setVotos] = useState<{ [key: string]: number }>({});
   const [cargando, setCargando] = useState(true);
@@ -13,16 +16,20 @@ export default function DetalleResultados() {
   const [descargando, setDescargando] = useState(false);
   const router = useRouter();
 
+  // Estados de doble validación por seguridad estricta de la URL
+  const [autenticado, setAutenticado] = useState(false);
+  const [passwordInput, setPasswordInput] = useState('');
+  const [errorPassword, setErrorPassword] = useState(false);
+
   useEffect(() => {
-    // Redirección de seguridad si intentan entrar sin contraseña previa
+    // Si el veedor ya se autenticó en el monitoreo principal, el acceso se aprueba directo
     const sesionValida = sessionStorage.getItem('veedor_autenticado');
-    if (sesionValida !== 'true') {
-      router.push('/resultados');
-      return;
+    if (sesionValida === 'true') {
+      setAutenticado(true);
     }
 
     const cargarDatos = async () => {
-      // 🔄 CAMBIO: Consultamos la vista ordenada para que las barras verticales sigan el mismo orden (A primero, B después)
+      // 🔄 Consultamos la vista ordenada para que las barras verticales sigan el mismo orden (A primero, B después)
       const { data: datosVotos } = await supabase.from('lista_votos_ordenada').select('*');
       if (datosVotos) {
         const mapaVotos: { [key: string]: number } = {};
@@ -44,7 +51,19 @@ export default function DetalleResultados() {
     };
 
     cargarDatos();
-  }, [router]);
+  }, []);
+
+  const manejarLoginDetalle = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (passwordInput === CONTRASEÑA_ADMIN) {
+      setAutenticado(true);
+      setErrorPassword(false);
+      sessionStorage.setItem('veedor_autenticado', 'true');
+    } else {
+      setErrorPassword(true);
+      setPasswordInput('');
+    }
+  };
 
   const descargarReporteVotos = async () => {
     if (descargando) return;
@@ -67,8 +86,7 @@ export default function DetalleResultados() {
       let contenidoCsv = "Nro Voto;Opcion Seleccionada;Fecha y Hora del Sufragio\n";
       
       historial.forEach((voto, index) => {
-        // CORRECCIÓN: Forzamos al objeto Date a interpretar la estampa de tiempo 
-        // y la formateamos explícitamente en la zona horaria de Ecuador (es-EC)
+        // Forzamos la interpretación y formateamos a la hora local exacta de Ecuador
         const fechaObjeto = new Date(voto.fecha_hora);
         const fechaFormateada = fechaObjeto.toLocaleString('es-EC', {
           timeZone: 'America/Guayaquil',
@@ -78,7 +96,7 @@ export default function DetalleResultados() {
           hour: '2-digit',
           minute: '2-digit',
           second: '2-digit',
-          hour12: true // Muestra el formato AM/PM de manera clara
+          hour12: true
         });
         
         contenidoCsv += `${index + 1};${voto.opcion};${fechaFormateada}\n`;
@@ -120,6 +138,30 @@ export default function DetalleResultados() {
   const maxVotos = Math.max(...Object.values(votos), 1);
 
   if (cargando) return <div className="p-8 text-center text-white bg-slate-950 h-screen flex items-center justify-center">Generando escrutinio estadístico...</div>;
+
+  // 🔒 CANDADO DE SEGURIDAD: Si no está autenticado, bloquea la visualización analítica
+  if (!autenticado) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-white flex items-center justify-center p-4 font-sans">
+        <div className="max-w-md w-full bg-slate-900/90 backdrop-blur-md rounded-2xl shadow-2xl p-8 border border-red-900/40 text-center">
+          <div className="mx-auto flex items-center justify-center h-14 w-14 rounded-full bg-red-950 border border-red-500/30 text-red-400 text-2xl mb-4">🔒</div>
+          <h2 className="text-2xl font-black uppercase tracking-tight text-slate-100">Auditoría Bloqueada</h2>
+          <p className="text-xs text-slate-400 mt-2 font-medium">Se requiere autorización del veedor o junta electoral para acceder a las analíticas.</p>
+          <form onSubmit={manejarLoginDetalle} className="mt-6 space-y-4">
+            <input
+              type="password"
+              placeholder="Ingresa la clave de acceso"
+              value={passwordInput}
+              onChange={(e) => setPasswordInput(e.target.value)}
+              className="w-full bg-slate-950 border border-slate-800 focus:border-red-500 rounded-xl px-4 py-3 text-sm text-center font-bold tracking-widest text-white transition-all outline-none"
+            />
+            {errorPassword && <p className="text-red-500 text-xs font-bold mt-2 animate-pulse">⚠️ Contraseña incorrecta. Inténtalo de nuevo.</p>}
+            <button type="submit" className="w-full bg-gradient-to-r from-red-600 to-red-700 hover:from-red-700 hover:to-red-800 text-white font-black text-xs py-3.5 px-4 rounded-xl uppercase tracking-wider transition-all">Verificar Identidad</button>
+          </form>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-blue-950 text-white p-6 font-sans">
@@ -164,8 +206,7 @@ export default function DetalleResultados() {
                     style={{ height: `${Math.max(alturaGrafica, 6)}%` }}
                     className="w-full max-w-[60px] bg-gradient-to-t from-blue-700 via-blue-500 to-cyan-400 rounded-t-xl transition-all duration-1000 ease-out shadow-lg shadow-blue-500/10 hover:brightness-110"
                   />
-                  {/* SE CORRIGIÓ: Se quitó truncate/max-w-full y se puso whitespace-nowrap para evitar que se mochen los números */}
-                  <span className="text-sm font-black text-white mt-4 mb-1 College tracking-wide whitespace-nowrap">{porcentaje}%</span>
+                  <span className="text-sm font-black text-white mt-4 mb-1 tracking-wide whitespace-nowrap">{porcentaje}%</span>
                   <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider whitespace-nowrap">{opcion}</span>
                 </div>
               );
