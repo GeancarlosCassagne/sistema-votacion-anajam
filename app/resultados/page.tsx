@@ -24,7 +24,8 @@ export default function PantallaVeedor() {
     if (sesionValida === 'true') setAutenticado(true);
 
     const cargarDatos = async () => {
-      const { data: datosVotos } = await supabase.from('votos').select('*');
+      // 🔄 CAMBIO: Consultamos la vista ordenada en lugar de la tabla directa
+      const { data: datosVotos } = await supabase.from('lista_votos_ordenada').select('*');
       if (datosVotos) {
         const mapaVotos: { [key: string]: number } = {};
         datosVotos.forEach((fila) => { 
@@ -34,6 +35,7 @@ export default function PantallaVeedor() {
         setVotos(mapaVotos);
       }
 
+      // 2. Obtener estado de la elección
       const { data: datosEstado } = await supabase
         .from('estado_eleccion')
         .select('activa')
